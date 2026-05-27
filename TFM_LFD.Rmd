@@ -13,3 +13,116 @@ knitr::opts_chunk$set(
 )
 ```
 
+```{r, include=FALSE}
+library(openxlsx)
+library(stringr)
+library(stringi)
+library(readxl)
+library(janitor)
+library(readxl)
+library(ggplot2)
+library(ggsci)
+library(ggbreak)
+library(tibble)
+library(lubridate)
+library(scales)
+library(tidyr)
+library(writexl)
+library(compareGroups)
+library(patchwork)
+library(sjPlot)
+library(dplyr) 
+library(foreign)
+library(tsModel)
+library("lmtest")
+library("Epi")
+library("splines")
+library("vcd")
+library(AER)
+library(MASS)
+```
+
+# 1. Limpieza base de datos
+```{r}
+db_spne <- read_excel("BD_TFM.xlsx", sheet = 1 )
+
+#clean names y renombrar columnas
+db_spne <- db_spne %>% dplyr::mutate(across(where(is.character), tolower)) #poner todo en minuscula
+
+db_spne <- db_spne %>% clean_names()
+
+#creamos la variable año+mes
+
+db_spne <- db_spne %>%
+  dplyr::mutate(fecha = make_date(year = year, month = month, day = 1))
+
+#PRE Y POST INTERVENCIÓN
+
+db_spne <- db_spne %>%
+  mutate(
+    d = str_to_lower(year),
+    periodo = case_when(
+      d <2016 ~ 0, #pre-intervención = 0
+      TRUE ~ 1 #post_intervención = 1
+    )
+  ) %>%
+  dplyr::select(-d)
+
+```
+
+
+# 2. Descriptivos
+
+
+Tabla demográficos (incluidos edad+sexo+epoc)
+```{r}
+#filtramos solo INR
+db_spne_INR <- db_spne %>% dplyr::filter(year > 2010, dx_lfd== "neumonia+eaepoc")
+demograficos <- compareGroups(periodo ~ edad+sexo+grupo_epoc+pcv13 , data=db_spne_INR)
+summary(demograficos)
+tabla_demográficos <- createTable(demograficos)
+tabla_demográficos
+
+export2xls(tabla_demográficos, file = "demograficos.xlsx")
+
+```
+
+## 2.1 Creación de los conteos mensuales para ITS
+```{r}
+#secuencia completa de todos los meses
+fechas_completas <- expand.grid(
+  year  = 2011:2021,
+  month = 1:12
+) %>%
+  arrange(year, month) %>%
+  mutate(time = row_number()) 
+
+# unimos las fechas con los casos por fecha
+tabla_its <- fechas_completas %>%
+  left_join(
+    db_spne %>%
+      filter(dx_lfd == "neumonia+eaepoc") %>%
+      count(year, month, periodo, name = "cases"),
+    by = c("year", "month")
+  ) %>%
+  mutate(cases = replace_na(cases, 0))  #rellenamos con cero los vacíos
+
+#periodo. si <2016 periodo 0 (pre) y sino 1 (post)
+tabla_its <- tabla_its %>%
+  mutate(periodo = ifelse(year < 2016, 0, 1))
+
+#calculamos el nº de EPOC por mes para calcular ratio mensual
+pop_epoc <- db_spne %>%
+  filter(epoc_cat == "si") %>%
+  count(year, month, name = "pob")
+  
+#lo unimos a la tabla principal
+tabla_its <- tabla_its %>%
+  left_join(pop_epoc, by = c("year", "month")) %>%
+  mutate(rate = cases *100/ pob)%>% 
+  mutate(pob = replace_na(pob, 1)) %>% #para no dividir entre 0
+  mutate(rate = replace_na(rate, 0))
+
+#creamos fecha para las gráficas
+tabla_its$fecha <- as.Date(paste(tabla_its$year, tabla_its$month, "01", sep="-"))
+```
