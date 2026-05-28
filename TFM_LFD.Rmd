@@ -19,7 +19,6 @@ library(stringr)
 library(readxl)
 library(janitor)
 library(ggplot2)
-library(ggbreak)
 library(lubridate)
 library(scales)
 library(tidyr)
@@ -55,7 +54,7 @@ db_spne <- db_spne %>%
 
 db_spne <- db_spne %>%
   mutate(
-    d = str_to_lower(year),
+    d = year,
     periodo = case_when(
       d <2016 ~ 0, #pre-intervención = 0
       TRUE ~ 1 #post_intervención = 1
@@ -114,8 +113,8 @@ pop_epoc <- db_spne %>%
 #lo unimos a la tabla principal
 tabla_its <- tabla_its %>%
   left_join(pop_epoc, by = c("year", "month")) %>%
-  mutate(rate = cases *100/ pob)%>% 
   mutate(pob = replace_na(pob, 1)) %>% #para no dividir entre 0
+  mutate(rate = cases *100/ pob)%>% 
   mutate(rate = replace_na(rate, 0))
 
 #creamos fecha para las gráficas
@@ -133,7 +132,7 @@ pob2_df <- data.frame(
   year = 2011:2021,
   pob_anual = c(115349,131115,136373,138230,135424,135515,121938,126276,181537,176965,176423)) %>%
   dplyr::mutate(pob2 = pob_anual / 12) %>%
-  dplyr::mutate(pob3 = pob_anual / 3)
+  dplyr::mutate(pob3 = pob_anual / 3) #objetivo 2
 
 #lo unimos en base al año
 tabla_its <- tabla_its %>%
@@ -150,20 +149,20 @@ tabla_its <- tabla_its %>%
 breaks_eje <- tabla_its$time[tabla_its$month == 1]
 labels_eje  <- tabla_its$fecha[tabla_its$month == 1]
 
-factor <- max(tabla_its$rate) / max(tabla_its$cases)
+factor1 <- max(tabla_its$rate) / max(tabla_its$cases)
 
 casos_mes_plot <-tabla_its %>% ggplot() + 
   #ponemos el rectángulo al ppio para que quede al fondo
   annotate("rect", xmin = 61, xmax = 133, ymin = -Inf, ymax = Inf, fill = "grey70")+
   scale_x_continuous(breaks = breaks_eje, labels = labels_eje) + #ejes X
-  geom_bar(mapping = aes(x = time, y = cases*1/0.25),#amplificamos los casos para que quede bien la grafica
+  geom_bar(mapping = aes(x = time, y = cases*factor1),#amplificamos los casos para que quede bien la grafica
            fill="#80A8A8", stat = "identity") + 
-  geom_point(mapping = aes(x = time, y = rate),fill="#80A8A8", size = 2, shape = 21) + 
+  geom_point(mapping = aes(x = time, y = rate),fill="#80A7A0", size = 2, shape = 21) + 
   geom_line(mapping = aes(x = time, y = rate,group=1)) + 
     scale_y_continuous( #eje Y
     name = "Ratio INR (x100)", 
-    limits = c(0,150),
-    sec.axis = sec_axis(~ .* 0.25/1, #eje por 1/factor de los casos
+    limits = c(0,max(tabla_its$rate)),#max rate2> maxrate
+    sec.axis = sec_axis(~ .* 1/factor1, #eje por 1/factor de los casos
                         name = "Número INR")) + 
   theme_bw() + 
   theme(
@@ -176,19 +175,21 @@ casos_mes_plot
 
 #ggsave("casos_mes_plot.png", plot = casos_mes_plot, width = 12, height = 4, dpi = 300)
 
+#factor para la gráfica (pocos casos, alto rate)
+factor2 <- max(tabla_its$rate2) / max(tabla_its$cases)
 
 #grafica para ratio 2
 casos_mes_plot2 <-tabla_its %>% ggplot() + 
   #ponemos el rectángulo al ppio para que quede al fondo
   annotate("rect", xmin = 61, xmax = 133, ymin = -Inf, ymax = Inf, fill = "grey70")+
   scale_x_continuous(breaks = breaks_eje, labels = labels_eje) +
-  geom_bar(mapping = aes(x = time, y = cases*1/0.25),fill="deepskyblue4", stat = "identity") + 
-  geom_point(mapping = aes(x = time, y = rate2),fill="deepskyblue4", size = 2, shape = 21) + 
+  geom_bar(mapping = aes(x = time, y = cases*factor2),fill="deepskyblue4", stat = "identity") + 
+  geom_point(mapping = aes(x = time, y = rate2),fill="skyblue", size = 2, shape = 21) + 
   geom_line(mapping = aes(x = time, y = rate2,group=1)) + 
     scale_y_continuous(
-      limits = c(0,150),#lo ponemos igual que la otra 
+      limits = c(0,max(tabla_its$rate)),#lo ponemos igual que la otra 
     name = "Ratio INR (x 100.000 personas)", 
-    sec.axis = sec_axis(~ .* 0.25/1, #eje por 1/factor de los casos
+    sec.axis = sec_axis(~ ./ factor2, #eje por 1/factor de los casos
                         , name = "Número INR")) + 
   theme_bw() + 
   theme(
@@ -294,3 +295,233 @@ sum(residuals(mp2, type = "pearson")^2) / df.residual(mp2)
 ```
 Con el denominador mensual, no hay sobrepispersión en el análisis principal (denominador HUB) pero si que la hay con el denominador poblacional (análisis de sensibilidad). Mantenemos poisson con analisis princiapl y binomial negativa con el denominador poblacional. 
 
+```{r}
+##bn RATIO 2
+
+mnb2 <- glm.nb(cases ~ offset(log(pob2)) + time + periodo,
+                    data = tabla_its)
+
+summary(mnb2)
+
+1/mnb2$theta
+
+-2*(logLik(modelo_poisson)-logLik(mnb2))
+```
+
+```{r}
+print("Modelo Poisson análisis principal")
+tab_model(modelo_poisson)
+
+print("Modelo binomial negativa análisis sensibilidad")
+tab_model(mnb2)
+
+```
+
+
+## 3.3 Gráfica inicial
+Hacemos el análisis ITS después de binomial negativa
+
+```{r}
+# create a new dataframe with 0.1 time units to improve the graph
+datanew_its <- data.frame(pob=mean(tabla_its$pob),
+                          pob2=mean(tabla_its$pob2),
+                          periodo=rep(c(0,1),c(600,720)), #0 = 600 puntos y 1 = 720 puntos
+                          time= 1:1320/10,
+                          month=rep(1:120/10,11)) #repetimos ciclo 1-12 en 11 años 
+
+# We generate predicted values based on the model in order to create a plot
+#type response para dartelo en la escala original de la variable y no en log
+pred1 <- predict(modelo_poisson,type="response",datanew_its)/mean(datanew_its$pob)*100
+
+
+# to plot the counterfactual scenario we create a data frame as if 
+#   the intervention was never being implemented
+#ponemos todo el periodo como SIN intervención
+counterfactual <- data.frame(pob=mean(tabla_its$pob),
+                          pob2=mean(tabla_its$pob2),
+                          periodo=0,
+                          time= 1:1320/10,
+                          month=rep(1:120/10,11)) #repetimos ciclo 1-12 en 11 años 
+
+
+# generate predictions under the counterfactual scenario and add it to the plot
+pred1b <- predict(modelo_poisson,counterfactual,type="response")/mean(tabla_its$pob)*100
+
+
+#FUNCION PARA HACER LA GRAFICA
+funcion_plot <- function(df,ratio, pred, pred_cf, titulo, ylab){
+  ggplot()+
+    geom_rect(aes(xmin = 61 , xmax = 133, ymin = 0, ymax = max(ratio)*1.2),fill = "grey90") +
+    geom_point(data = df, aes(x = time, y = ratio), size = 1.5) +
+    geom_line(data = datanew_its, aes(x = time, y = pred),color = "darkred") + #con intervención
+      geom_line(data = counterfactual, aes(x = time, y = pred_cf),color = "darkblue") + #sin intervención
+  scale_x_continuous(breaks = breaks_eje, labels = labels_eje) +
+  labs(
+    x = "Año",
+    y = ylab,
+    title= titulo
+  ) +
+    theme_bw() + 
+  theme(
+    panel.grid.minor = element_blank(),legend.position = "none", 
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+}
+
+its <- funcion_plot(df = tabla_its,ratio = tabla_its$rate, pred = pred1, pred_cf=pred1b, titulo = "Análisis principal, denominador interno", ylab = "Ratio x 100")
+
+its
+```
+
+```{r}
+##### RATIO 2 #####
+#predicción con intervención mnb2
+pred2 <- predict(mnb2,type="response",datanew_its)/mean(datanew_its$pob2)*10^5
+
+#predicción conterfactual mnb2
+pred2b <- predict(mnb2,counterfactual,type="response")/mean(counterfactual$pob2)*10^5
+
+#plot para ratio2
+its2 <- funcion_plot(df = tabla_its,ratio = tabla_its$rate2, pred = pred2, pred_cf=pred2b, titulo = "Análisis sensibilidad, denominador poblacional", ylab = "Ratio x 10.000")
+
+its2
+```
+```{r}
+# unir gráficos con patchwork
+its_combinado <- 
+  (its + labs(tag = "a)") ) /
+  (its2 + labs(tag = "b)") )
+
+
+ggsave("ITS inicial.png",
+       plot = its_combinado,
+       width = 14,
+       height = 10,
+       dpi = 300)
+```
+
+# 4. Estadísticos: ajuste del modelo con los confusores. 
+
+
+#a) Model checking and autocorrelation
+
+```{r}
+#RATIO INTERNO
+png("residuos_poisson.png", width = 8, height = 4, units = "in", res = 300)
+res <- residuals(modelo_poisson,type="deviance")
+layout(matrix(c(1, 2, 3), 
+              nrow = 1, byrow = TRUE))
+
+plot(tabla_its$time, res,
+     ylim = c(-5, 10),
+     pch = 19,
+     cex = 0.7,
+     col = grey(0.6),
+     main = "Residuals over time (poisson)",
+     ylab = "Deviance residuals",
+     xlab = "Date")
+abline(h = 0, lty = 2, lwd = 2)
+
+acf(res, main = "ACF-2") #AUTOCORRELACION
+pacf(res, main = "Partial ACF-2")
+
+dev.off()
+
+##### RATIO 2 ##########
+png("residuos_bnm.png", width = 8, height = 4, units = "in", res = 300)
+res2 <- residuals(mnb2,type="deviance")
+layout(matrix(c(1, 2, 3), 
+              nrow = 1, byrow = TRUE))
+
+plot(tabla_its$time, res2,
+     ylim = c(-5, 10),
+     pch = 19,
+     cex = 0.7,
+     col = grey(0.6),
+     main = "Residuals over time (bn)",
+     ylab = "Deviance residuals",
+     xlab = "Date")
+abline(h = 0, lty = 2, lwd = 2)
+
+acf(res2, main = "ACF-2")
+pacf(res2, main = "Partial ACF-2")
+
+
+dev.off()
+```
+Ratio 2: Varios residuos quedan por fuera del IC95, indicando correlación. Parece por el patrón que es debido a estacionalidad. 
+En el caso del ratio 1 (interno) no parece que haya este patrón estacional y los residuos están menos dispersos, no armonizamos. 
+
+#b) adjusting for seasonality
+
+```{r}
+###### MODELO HARMONIZADO RATIO 2 #########
+model_harm2 <- glm.nb(cases ~ offset(log(pob2)) + time + periodo + harmonic(month,2,12), data = tabla_its)
+
+summary(model_harm2)
+summary(model_harm2)$dispersion
+round(ci.lin(model_harm2,Exp=T),3)
+
+# EFFECTS --> cambio de nivel
+ci.lin(model_harm2,Exp=T)["periodo",5:7]
+
+# TREND --> cambio de pendiente
+exp(coef(model_harm2)["time"]*12)
+
+png("residuos_bH.png", width = 8, height = 4, units = "in", res = 300)
+res4 <- residuals(model_harm2,type="deviance")
+layout(matrix(c(1, 2, 3), 
+              nrow = 1, byrow = TRUE))
+
+plot(tabla_its$time, res2,
+     ylim = c(-5, 10),
+     pch = 19,
+     cex = 0.7,
+     col = grey(0.6),
+     main = "Residuals over time (b-h)",
+     ylab = "Deviance residuals",
+     xlab = "Date")
+abline(h = 0, lty = 2, lwd = 2)
+
+acf(res4, main = "ACF-2")
+pacf(res4, main = "Partial ACF-2")
+
+
+dev.off()
+
+#comparación possion con y sin harmonizar
+AIC(mnb2, model_harm2) #menor AIC mejor ajuste
+anova(mnb2, model_harm2, test = "Chisq")
+
+tab_model(model_harm2)
+```
+
+Graficamos la armonización
+```{r}
+pred2 <- predict(model_harm2,type="response",datanew_its)/mean(datanew_its$pob2)*10^5
+
+
+its_harm <- ggplot() +
+  geom_rect(aes(xmin = 61 , xmax = 133, ymin = 0, ymax = max(tabla_its$rate)*1.2),
+            fill = "grey90") +
+  geom_point(data = tabla_its, aes(x = time, y = rate), size = 1.5) +
+  geom_line(data = datanew_its, aes(x = time, y = pred2),color = "purple") + #con intervención
+  scale_x_continuous(
+    breaks = breaks_eje, labels = labels_eje
+  ) +
+  labs(
+    x = "Año",
+    y = "Ratio x 100",
+    title= "Análisis sensibilidad, denominador poblacional"
+  ) +
+    theme_bw() + 
+  theme(
+    #panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), legend.title = element_blank(), legend.position = "none", 
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )+xlab(" ") 
+
+its_harm
+
+ggsave("its_harm.png", plot = its_harm, width = 12, height = 4, dpi = 300)
+```
