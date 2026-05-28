@@ -501,7 +501,7 @@ pred2 <- predict(model_harm2,type="response",datanew_its)/mean(datanew_its$pob2)
 
 
 its_harm <- ggplot() +
-  geom_rect(aes(xmin = 61 , xmax = 133, ymin = 0, ymax = max(tabla_its$rate)*1.2),
+  geom_rect(aes(xmin = 61 , xmax = 133, ymin = 0, ymax = max(tabla_its$rate2)*1.2),
             fill = "grey90") +
   geom_point(data = tabla_its, aes(x = time, y = rate2), size = 1.5) +
   geom_line(data = datanew_its, aes(x = time, y = pred2),color = "purple") + #con intervención
@@ -510,7 +510,7 @@ its_harm <- ggplot() +
   ) +
   labs(
     x = "Año",
-    y = "Ratio x 100",
+    y = "Ratio x 10000",
     title= "Análisis sensibilidad, denominador poblacional"
   ) +
     theme_bw() + 
@@ -544,12 +544,12 @@ ci.lin(model_covid,Exp=T)["periodo",5:7]
 exp(coef(model_covid)["time"]*12)
 
 # We again check the model and autocorrelation functions
-res4 <- residuals(model_covid,type="deviance")
-plot(res4,ylim=c(-5,10),pch=19,cex=0.7,col=grey(0.6),main="Residuals over time",
+res_covid <- residuals(model_covid,type="deviance")
+plot(res_covid,ylim=c(-5,10),pch=19,cex=0.7,col=grey(0.6),main="Residuals over time",
   ylab="Deviance residuals",xlab="Date")
 abline(h=0,lty=2,lwd=2)
-acf(res4)
-pacf(res4)
+acf(res_covid)
+pacf(res_covid)
 
 
 ##### RATIO 2 ################### MODELO COVID 2 #####################
@@ -566,12 +566,12 @@ ci.lin(model_covid2,Exp=T)["periodo",5:7]
 exp(coef(model_covid2)["time"]*12)
 
 # We again check the model and autocorrelation functions
-res5 <- residuals(model_covid2,type="deviance")
-plot(res5,ylim=c(-5,10),pch=19,cex=0.7,col=grey(0.6),main="Residuals over time",
+res_covid2 <- residuals(model_covid2,type="deviance")
+plot(res_covid2,ylim=c(-5,10),pch=19,cex=0.7,col=grey(0.6),main="Residuals over time",
   ylab="Deviance residuals",xlab="Date")
 abline(h=0,lty=2,lwd=2)
-acf(res5)
-pacf(res5)
+acf(res_covid2)
+pacf(res_covid2)
 ```
 
 ```{r}
@@ -587,11 +587,11 @@ Gráfica Modelo Poisson análisis principal + covid
 #AÑADIMOS COVID como variable
 datanew_its <- data.frame(pob=mean(tabla_its$pob),pob2=mean(tabla_its$pob2),
                           periodo=rep(c(0,1),c(600,720)),
-                          time=1:1320/10, rep(1:12, length.out = 1320),
+                          time=1:1320/10, month = rep(1:12, length.out = 1320),
                           covid = rep (c(0,1), c(1110,210)))
 counterfactual <- data.frame(pob=mean(tabla_its$pob),pob2=mean(tabla_its$pob2),
                              periodo=0,
-                          time=1:1320/10, rep(1:12, length.out = 1320),
+                          time=1:1320/10, month = rep(1:12, length.out = 1320),
                           covid = rep (c(0,1), c(1110,210)))
 
 pred4 <- predict(model_covid,type="response",transform(datanew_its))/mean(datanew_its$pob)*100
@@ -669,15 +669,20 @@ tab_model(model_int2)
 Prueba poisson tras armonizar y covid (el valor de error estándar es muy alto y Warning while fitting theta: iteration limit reached)
 
 ```{r}
-model_int2 <- glm(cases ~ offset(log(pob2)) + time + periodo + harmonic(month,2,12) + covid + periodo*time, family = poisson, data = tabla_its)
-summary(model_int2)
+model_int3 <- glm(cases ~ offset(log(pob2)) + time + periodo + harmonic(month,2,12) + covid + periodo*time, family = poisson, data = tabla_its)
+summary(model_int3)
 
-dispersiontest(model_int2)
+dispersiontest(model_int3)
+```
+
+Al volver a poisson y volver testar la sobredispersión,los valores se han reducido (dispersión 1.17 y p value 0.15) por lo que es mejor volver a poisson. La sobredispersión inicial se debía a esta estacionalidad y al integrarla en el modelo, se puede volver a poisson. 
+```{r}
+tab_model(model_int3)
 ```
 
 # 5. ITS tras ajustes. 
-###################################################################
-# 5.1 Modelo1 con interacción - gráfica
+
+## 5.1 Modelo1 con interacción - gráfica
 
 ```{r}
 # Realizamos las predicciones con el nuevo modelo
@@ -693,28 +698,28 @@ its_ajustado <- funcion_plot(df = tabla_its,ratio = tabla_its$rate, pred = pred3
 its_ajustado
 ```
 
-#5.2 ITS ajustado ratio 2 (línea continua)
-```{r}
 
+## 5.2 gráfica final ITS ratio 2 (línea continua)
+```{r}
+#con el modelo de poisson.
 #predicción con intervención
-pred4 <- predict(model_int2,type="response",transform(datanew_its,month=3))/mean(tabla_its$pob2)*10^5
+pred4 <- predict(model_int3,type="response",transform(datanew_its,month=3))/mean(tabla_its$pob2)*10^5
 
 # generate predictions under the counterfactual scenario
-pred4b <- predict(model_int2,type="response",transform(counterfactual,month=3))/mean(tabla_its$pob2)*10^5
+pred4b <- predict(model_int3,type="response",transform(counterfactual,month=3))/mean(tabla_its$pob2)*10^5
 
 #plot para ratio2
-its_ajustado_cont2 <- funcion_plot(df = tabla_its,ratio = tabla_its$rate2, pred = pred4, pred_cf=pred4b, titulo = "Análisis sensibilidad, denominador poblacional", ylab = "Ratio x 10.000")
+its_ajustado_cont3 <- funcion_plot(df = tabla_its,ratio = tabla_its$rate2, pred = pred4, pred_cf=pred4b, titulo = "Análisis sensibilidad, denominador poblacional", ylab = "Ratio x 10.000")
 
-its_ajustado_cont2
+its_ajustado_cont3
 
 
 ```
-
 ```{r}
 # unir gráficos con patchwork
 its_ajustado_comb <- 
   (its_ajustado + labs(tag = "a)") ) /
-  (its_ajustado_cont2 + labs(tag = "b)") )
+  (its_ajustado_cont3 + labs(tag = "b)") )
 
 
 ggsave("ITS ajustado.png",
@@ -723,3 +728,451 @@ ggsave("ITS ajustado.png",
        height = 10,
        dpi = 300)
 ```
+
+## 5.3 Sin incluir COVID
+Hacemos análisis excluyendo el periodo covid
+
+```{r}
+#empieza 03-2020 el punto 111
+tabla_its_sincovid <- tabla_its %>% dplyr::filter(time<111)
+
+datanew_its_sincovid <- datanew_its %>% dplyr::filter(time<111.1)
+counterfactual_sincovid <- counterfactual %>% dplyr::filter(time<111.1)
+
+```
+
+```{r}
+############# MODELO INT 1 sin covid #####################
+model_int_sincovid <- glm(cases ~ offset(log(pob)) + time + periodo + periodo*time, family=poisson, data = tabla_its_sincovid)
+tab_model(model_int_sincovid)
+
+```
+
+```{r}
+pred6 <- predict(model_int_sincovid,type="response",datanew_its_sincovid)/mean(tabla_its_sincovid$pob)*100
+
+# generate predictions under the counterfactual scenario and add it to the plot
+pred6b <- predict(model_int_sincovid,counterfactual_sincovid,type="response")/mean(tabla_its_sincovid$pob)*100
+
+sin_covid <- ggplot() +
+  geom_rect(aes(xmin = 61 , xmax = 111, ymin = 0, ymax = max(tabla_its_sincovid$rate)*1.2),
+            fill = "grey90") +
+  geom_point(data = tabla_its_sincovid, aes(x = time, y = rate), size = 1.5) +
+  geom_line(data = datanew_its_sincovid, aes(x = time, y = pred6),color = "darkred") + #con intervención
+  geom_line(data = counterfactual_sincovid, aes(x = time, y = pred6b),color = "darkblue") + #sin intervención
+  scale_x_continuous(
+    breaks = breaks_eje, labels = labels_eje
+  ) +
+  labs(
+    x = "Año",
+    y = "Std rate x 10,000",
+    title = "Modelo 1 con interacción sin covid"
+  ) +
+    theme_bw() + 
+  theme(
+    #panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), legend.title = element_blank(), legend.position = "none", 
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )+xlab(" ") 
+
+sin_covid
+
+
+```
+
+```{r}
+############# MODELO INT 2 sin covid #####################
+model_int2_sincovid <- glm(cases ~ offset(log(pob2)) + time + periodo + harmonic(month,2,12) + periodo*time, family = poisson, data = tabla_its_sincovid)
+tab_model(model_int2_sincovid)
+summary(model_int2_sincovid)
+```
+
+```{r}
+#predicción con intervención
+pred7 <- predict(model_int2_sincovid,type="response",transform(datanew_its_sincovid,month=3))/mean(tabla_its_sincovid$pob2)*10^5
+
+# generate predictions under the counterfactual scenario
+pred7b <- predict(model_int2_sincovid,type="response",transform(counterfactual_sincovid,month=3))/mean(tabla_its_sincovid$pob2)*10^5
+
+sin_covid2 <- ggplot() +
+  geom_rect(aes(xmin = 61 , xmax = 111, ymin = 0, ymax = max(tabla_its_sincovid$rate2)*1.2),
+            fill = "grey90") +
+  geom_point(data = tabla_its_sincovid, aes(x = time, y = rate2), size = 1.5) +
+  geom_line(data = datanew_its_sincovid, aes(x = time, y = pred7),color = "darkred") + #con intervención
+  geom_line(data = counterfactual_sincovid, aes(x = time, y = pred7b),color = "darkblue") + #sin intervención
+  scale_x_continuous(
+    breaks = breaks_eje, labels = labels_eje
+  ) +
+  labs(
+    x = "Año",
+    y = "Ratio x 10,000"
+  ) +
+    theme_bw() + 
+  theme(
+    #panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), legend.title = element_blank(), legend.position = "none", 
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+sin_covid2
+
+
+```
+
+```{r}
+# unir gráficos con patchwork
+its_sincovid <- 
+  (sin_covid + labs(tag = "a)") ) /
+  (sin_covid2 + labs(tag = "b)") )
+
+
+ggsave("its_sincovid.png",
+       plot = its_sincovid,
+       width = 14,
+       height = 10,
+       dpi = 300)
+```
+
+
+#6. Objetivo secundario: SV
+
+## 6.1 Demográficos
+```{r}
+#DB solo con INR - SV
+db_sv <- db_spne %>% dplyr::filter(pcv13 == "si" , dx_lfd== "neumonia+eaepoc")
+demograficos_SV <- compareGroups(periodo ~ edad+sexo+grupo_epoc+sistemia+dx_lfd, data=db_sv)
+tabla_demográficos_SV <- createTable(demograficos_SV)
+tabla_demográficos_SV
+```
+
+## 6.2 Gráfica incidencia PCV13 por años 
+
+Creación de los conteos mensuales para ITS
+```{r}
+# fec has POR CUATRIMESTRE
+fechas_sv <- expand.grid(
+  year = 2011:2021,
+  cuatri = 1:3
+) %>%
+  arrange(year, cuatri) %>%
+  mutate(time = row_number())
+
+# Tabla SV
+tabla_sv <- fechas_sv %>%
+  left_join(
+    db_spne %>%
+      filter(epoc_cat == "si" & dx_lfd == "neumonia+eaepoc"& pcv13 == "si") %>%
+      mutate(
+        cuatri = ifelse(month <= 4, 1, ifelse(month <= 8, 2,3))
+        )%>%
+      count(year, cuatri, name = "cases_sv"),
+    by = c("year", "cuatri")
+  ) %>%
+  mutate(cases_sv = replace_na(cases_sv, 0))
+
+tabla_sv <- tabla_sv %>%
+  left_join(
+    db_spne %>%
+      filter(epoc_cat == "si") %>%
+      mutate(
+        cuatri = ifelse(month <= 4, 1, ifelse(month <= 8, 2,3))
+        )%>%
+      count(year, cuatri, periodo, name = "pob"),
+    by = c("year", "cuatri")
+  ) %>%
+  mutate(pob = replace_na(pob, 1))
+
+#unimos denominador poblacional en base al año
+tabla_sv <- tabla_sv %>%
+    left_join(pob2_df%>% dplyr::select(year, pob3), by = "year")
+
+#lo unimos a la tabla principal
+tabla_sv <- tabla_sv %>%
+  dplyr::mutate(rate_sv = cases_sv *100/ pob)%>% #multiplicado *100, ver por cuanto
+  dplyr::mutate(rate_sv = replace_na(rate_sv, 0)) %>%
+  dplyr::mutate(rate2_sv = cases_sv *10^5/ pob3)%>% #multiplicado *100, ver por cuanto
+  dplyr::mutate(rate2_sv = replace_na(rate2_sv, 0))
+
+#Añadimos fecha-cuatri para la gráfica
+tabla_sv <- tabla_sv %>%
+  mutate(
+    fecha_cuatri = paste0(cuatri, "-", year))
+
+write.xlsx(tabla_sv, file = "tabla_sv.xlsx", asTable = TRUE)
+
+```
+
+```{r}
+casos_sv <-tabla_sv %>% ggplot() + 
+  annotate("rect", xmin = 16, xmax = 33, ymin = -Inf, ymax = Inf, fill = "grey70")+
+  scale_x_continuous(breaks = tabla_sv$time, labels = tabla_sv$fecha_cuatri) + #eje X
+  geom_bar(mapping = aes(x = time, y = cases_sv),
+           fill="darkmagenta", stat = "identity") + 
+  geom_point(mapping = aes(x = time, y = rate_sv),fill="darkmagenta", size = 2, shape = 21) + 
+  geom_line(mapping = aes(x = time, y = rate_sv,group=1)) + 
+    scale_y_continuous( #eje Y
+    name = "Ratio INR (x100)", 
+    limits = c(0,30),
+    sec.axis = sec_axis(~ ., 
+                        name = "Número INR")) + 
+  theme_bw() + 
+  theme(
+    panel.grid.minor = element_blank(), legend.title = element_blank(), legend.position = "none", 
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )+xlab(" ") 
+
+
+casos_sv
+```
+
+```{r}
+## RATIO 2 ##
+casos_sv2 <-tabla_sv %>% ggplot() + 
+  annotate("rect", xmin = 16, xmax = 33, ymin = -Inf, ymax = Inf, fill = "grey70")+
+  scale_x_continuous(breaks = tabla_sv$time, labels = tabla_sv$fecha_cuatri) + #eje X  
+  geom_bar(mapping = aes(x = time, y = cases_sv),#amplificamos los casos para que quede bien la grafica
+           fill="lightpink", stat = "identity") + 
+  geom_point(mapping = aes(x = time, y = rate2_sv),fill="lightpink", size = 2, shape = 21) + 
+  geom_line(mapping = aes(x = time, y = rate2_sv,group=1)) + 
+    scale_y_continuous( #eje Y
+    name = "Ratio INR (x100)", 
+    limits = c(0,30),
+    sec.axis = sec_axis(~ ., #eje por 1/factor de los casos
+                        name = "Número INR")) + 
+  theme_bw() + 
+  theme(
+    panel.grid.minor = element_blank(), legend.title = element_blank(), legend.position = "none", 
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )+xlab(" ") 
+
+
+casos_sv2
+```
+```{r}
+# unir gráficos con patchwork
+plot_combinado_sv <- 
+  (casos_sv + labs(tag = "a) Denominador interno") ) /
+  (casos_sv2 + labs(tag = "b) Denominador poblacional") )
+
+ggsave("RatioINR_SV.png",
+       plot = plot_combinado_sv,
+       width = 14,
+       height = 10,
+       dpi = 300)
+```
+
+
+
+
+## 6.3 Modelo inicial
+Poisson ratio 1
+```{r}
+sv_poisson <- glm(cases_sv ~ offset(log(pob))+ time + periodo ,
+              family = poisson,
+              data = tabla_sv)
+
+summary(sv_poisson)
+tab_model(sv_poisson)
+
+# Prueba de sobredispersión
+dispersiontest(sv_poisson)
+
+# We again check the model and autocorrelation functions
+res <- residuals(sv_poisson,type="deviance")
+plot(res,ylim=c(-5,10),pch=19,cex=0.7,col=grey(0.6),main="Residuals over time",
+  ylab="Deviance residuals",xlab="Date")
+abline(h=0,lty=2,lwd=2)
+acf(res)
+pacf(res)
+```
+p 0.83 y dispersion de lo mismo. No haría falta binomial negativa. 
+Al agrupar los meses deja de haber sobredispersión y estacionalidad. 
+
+Poisson ratio 2
+
+```{r}
+sv_poisson2 <- glm(cases_sv ~ offset(log(pob3))+ time + periodo ,
+              family = poisson,
+              data = tabla_sv)
+
+summary(sv_poisson2)
+tab_model(sv_poisson2)
+
+# Prueba de sobredispersión
+dispersiontest(sv_poisson2)
+
+# We again check the model and autocorrelation functions
+res <- residuals(sv_poisson2,type="deviance")
+plot(res,ylim=c(-5,10),pch=19,cex=0.7,col=grey(0.6),main="Residuals over time",
+  ylab="Deviance residuals",xlab="Date")
+abline(h=0,lty=2,lwd=2)
+acf(res)
+pacf(res)
+```
+
+dispersion de 1.5 (p value 0.05), tampoco haría falta. 
+Se dispersan algo más los datos, pero no hay autocorrelación ni los residuos forman un patrón concreto, parece que se alejan más en el periodo COVID
+
+
+## 6.4 Gráfica inicial
+```{r}
+#dataframes
+# create a new dataframe with 0.1 time units to improve the graph
+#en total 33 puntos (intervencion en 16)
+datanew_sv <- data.frame(
+  pob = mean(tabla_sv$pob),
+  pob3 = mean(tabla_sv$pob3),
+  time = seq(1, 33, length.out = 330)
+) %>%
+  mutate(
+    periodo = ifelse(time >= 16, 1, 0),
+    cuatri = rep(rep(1:3, each = 10), 11),
+    covid = ifelse(time >= 29, 1, 0)
+  )
+
+#ponemos todo el periodo como SIN intervención
+counterfactual_sv <- datanew_sv %>%
+  mutate(periodo = 0)
+
+
+#FUNCION PARA HACER LA GRAFICA
+plot_its <- function(df,ratio, pred, pred_cf, titulo, ylab){
+  ggplot()+
+    geom_rect(aes(xmin = 16 , xmax = 33, ymin = 0, ymax = max(ratio)*1.2),fill = "grey90") +
+    geom_point(data = df, aes(x = time, y = ratio), size = 1.5) +
+    geom_line(data = datanew_sv, aes(x = time, y = pred),color = "hotpink") + #con intervención
+      geom_line(data = counterfactual_sv, aes(x = time, y = pred_cf),color = "cornflowerblue") + #sin intervención
+  scale_x_continuous(breaks = df$time, labels = df$fecha_cuatri) +
+  labs(
+    x = "Cuatrimestre-año",
+    y = ylab,
+    title= titulo
+  ) +
+    theme_bw() + 
+  theme(
+    panel.grid.minor = element_blank(),legend.position = "none", 
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+}
+```
+
+```{r}
+# Predicted
+pred1 <- predict(sv_poisson,type="response",datanew_sv)/mean(datanew_sv$pob)*100
+
+# Pred counterfactual
+pred1b <- predict(sv_poisson,counterfactual_sv,type="response")/mean(counterfactual_sv$pob)*100
+
+
+its_sv <- plot_its(df = tabla_sv,ratio = tabla_sv$rate_sv, pred = pred1, pred_cf=pred1b, titulo = "Análisis principal, denominador interno", ylab = "Ratio x 100")
+its_sv
+```
+Ratio 2
+```{r}
+# Predicted
+pred2 <- predict(sv_poisson2,type="response",datanew_sv)/mean(datanew_sv$pob3)*10^5
+
+# Pred counterfactual
+pred2b<- predict(sv_poisson2,counterfactual_sv,type="response")/mean(counterfactual_sv$pob3)*10^5
+
+
+its_sv2 <- plot_its(df = tabla_sv,ratio = tabla_sv$rate2_sv, pred = pred2, pred_cf=pred2b, titulo = "Análisis sensibilidad, denominador poblacional", ylab = "Ratio x 100.000")
+its_sv2
+```
+## 6.4 variable covid e intervención
+```{r}
+#añadimos COVID desde marzo 2020 (punto 29)
+tabla_sv$covid <- ifelse(tabla_sv$time > 29, 1, 0)
+
+sv_covid <- glm(cases_sv ~ offset(log(pob))+ time + periodo + covid ,
+              family = poisson,
+              data = tabla_sv)
+
+summary(sv_covid)
+tab_model(sv_covid)
+
+```
+```{r}
+#grafica COVID ratio 1
+
+# Predicted
+pred1 <- predict(sv_covid,type="response",datanew_sv)/mean(datanew_sv$pob)*100
+
+# Pred counterfactual
+pred1b <- predict(sv_covid,counterfactual_sv,type="response")/mean(counterfactual_sv$pob)*100
+
+
+its_sv <- plot_its(df = tabla_sv,ratio = tabla_sv$rate_sv, pred = pred1, pred_cf=pred1b, titulo = "Análisis principal, denominador interno", ylab = "Ratio x 100")
+its_sv
+```
+Modelo COVID ratio 2 
+```{r}
+#RATIO 2
+sv_covid2 <- glm(cases_sv ~ offset(log(pob3))+ time + periodo + covid ,
+              family = poisson,
+              data = tabla_sv)
+
+summary(sv_covid2)
+tab_model(sv_covid2)
+
+```
+```{r}
+# Predicted
+pred2 <- predict(sv_covid2,type="response",datanew_sv)/mean(datanew_sv$pob3)*10^5
+
+# Pred counterfactual
+pred2b<- predict(sv_covid2,counterfactual_sv,type="response")/mean(counterfactual_sv$pob3)*10^5
+
+
+its_sv2 <- plot_its(df = tabla_sv,ratio = tabla_sv$rate2_sv, pred = pred2, pred_cf=pred2b, titulo = "Análisis sensibilidad, denominador poblacional", ylab = "Ratio x 100.000")
+its_sv2
+```
+Interacción RATIO 1
+
+```{r}
+sv_inter <- glm(cases_sv ~ offset(log(pob))+ time + periodo + covid + time*periodo,
+              family = poisson,
+              data = tabla_sv)
+
+summary(sv_inter)
+tab_model(sv_inter)
+
+```
+
+```{r}
+#grafica interacción ratio 1
+
+# Predicted
+pred1 <- predict(sv_inter,type="response",datanew_sv)/mean(datanew_sv$pob)*100
+
+# Pred counterfactual
+pred1b <- predict(sv_inter,counterfactual_sv,type="response")/mean(counterfactual_sv$pob)*100
+
+
+its_sv <- plot_its(df = tabla_sv,ratio = tabla_sv$rate_sv, pred = pred1, pred_cf=pred1b, titulo = "Análisis principal, denominador interno", ylab = "Ratio x 100")
+its_sv
+```
+Modelo interacción ratio 2 
+```{r}
+#RATIO 2
+sv_inter2 <- glm(cases_sv ~ offset(log(pob3))+ time + periodo + covid + time*periodo ,
+              family = poisson,
+              data = tabla_sv)
+
+summary(sv_inter2)
+tab_model(sv_inter2)
+
+```
+
+```{r}
+# Predicted
+pred2 <- predict(sv_inter2,type="response",datanew_sv)/mean(datanew_sv$pob3)*10^5
+
+# Pred counterfactual
+pred2b<- predict(sv_inter2,counterfactual_sv,type="response")/mean(counterfactual_sv$pob3)*10^5
+
+
+its_sv2 <- plot_its(df = tabla_sv,ratio = tabla_sv$rate2_sv, pred = pred2, pred_cf=pred2b, titulo = "Análisis sensibilidad, denominador poblacional", ylab = "Ratio x 100.000")
+its_sv2
+```
+
