@@ -305,7 +305,6 @@ summary(mnb2)
 
 1/mnb2$theta
 
--2*(logLik(modelo_poisson)-logLik(mnb2))
 ```
 
 ```{r}
@@ -327,7 +326,7 @@ datanew_its <- data.frame(pob=mean(tabla_its$pob),
                           pob2=mean(tabla_its$pob2),
                           periodo=rep(c(0,1),c(600,720)), #0 = 600 puntos y 1 = 720 puntos
                           time= 1:1320/10,
-                          month=rep(1:120/10,11)) #repetimos ciclo 1-12 en 11 años 
+                          month = rep(1:12, length.out = 1320))  
 
 # We generate predicted values based on the model in order to create a plot
 #type response para dartelo en la escala original de la variable y no en log
@@ -341,7 +340,7 @@ counterfactual <- data.frame(pob=mean(tabla_its$pob),
                           pob2=mean(tabla_its$pob2),
                           periodo=0,
                           time= 1:1320/10,
-                          month=rep(1:120/10,11)) #repetimos ciclo 1-12 en 11 años 
+                          month = rep(1:12, length.out = 1320)) 
 
 
 # generate predictions under the counterfactual scenario and add it to the plot
@@ -403,7 +402,7 @@ ggsave("ITS inicial.png",
 # 4. Estadísticos: ajuste del modelo con los confusores. 
 
 
-#a) Model checking and autocorrelation
+## a) Model checking and autocorrelation
 
 ```{r}
 #RATIO INTERNO
@@ -452,7 +451,7 @@ dev.off()
 Ratio 2: Varios residuos quedan por fuera del IC95, indicando correlación. Parece por el patrón que es debido a estacionalidad. 
 En el caso del ratio 1 (interno) no parece que haya este patrón estacional y los residuos están menos dispersos, no armonizamos. 
 
-#b) adjusting for seasonality
+## b) adjusting for seasonality
 
 ```{r}
 ###### MODELO HARMONIZADO RATIO 2 #########
@@ -473,7 +472,7 @@ res4 <- residuals(model_harm2,type="deviance")
 layout(matrix(c(1, 2, 3), 
               nrow = 1, byrow = TRUE))
 
-plot(tabla_its$time, res2,
+plot(tabla_its$time, res4,
      ylim = c(-5, 10),
      pch = 19,
      cex = 0.7,
@@ -504,7 +503,7 @@ pred2 <- predict(model_harm2,type="response",datanew_its)/mean(datanew_its$pob2)
 its_harm <- ggplot() +
   geom_rect(aes(xmin = 61 , xmax = 133, ymin = 0, ymax = max(tabla_its$rate)*1.2),
             fill = "grey90") +
-  geom_point(data = tabla_its, aes(x = time, y = rate), size = 1.5) +
+  geom_point(data = tabla_its, aes(x = time, y = rate2), size = 1.5) +
   geom_line(data = datanew_its, aes(x = time, y = pred2),color = "purple") + #con intervención
   scale_x_continuous(
     breaks = breaks_eje, labels = labels_eje
@@ -525,3 +524,115 @@ its_harm
 
 ggsave("its_harm.png", plot = its_harm, width = 12, height = 4, dpi = 300)
 ```
+
+#c) PANDEMIA --> confusor desde 2020
+```{r}
+#añadimos COVID desde marzo 2020
+tabla_its$covid <- ifelse(tabla_its$fecha >= as.Date("2020-03-01"), 1, 0)
+
+############# MODELO COVID #####################
+model_covid <- glm(cases ~ offset(log(pob)) + time + periodo + covid, family = poisson, data = tabla_its)
+
+summary(model_covid)
+summary(model_covid)$dispersion
+round(ci.lin(model_covid,Exp=T),3)
+
+# EFFECTS --> cambio de nivel
+ci.lin(model_covid,Exp=T)["periodo",5:7]
+
+# TREND --> cambio de pendiente
+exp(coef(model_covid)["time"]*12)
+
+# We again check the model and autocorrelation functions
+res4 <- residuals(model_covid,type="deviance")
+plot(res4,ylim=c(-5,10),pch=19,cex=0.7,col=grey(0.6),main="Residuals over time",
+  ylab="Deviance residuals",xlab="Date")
+abline(h=0,lty=2,lwd=2)
+acf(res4)
+pacf(res4)
+
+
+##### RATIO 2 ################### MODELO COVID 2 #####################
+model_covid2 <- glm.nb(cases ~ offset(log(pob2)) + time + periodo + harmonic(month,2,12) + covid, data = tabla_its)
+
+summary(model_covid2)
+summary(model_covid2)$dispersion
+round(ci.lin(model_covid2,Exp=T),3)
+
+# EFFECTS --> cambio de nivel
+ci.lin(model_covid2,Exp=T)["periodo",5:7]
+
+# TREND --> cambio de pendiente
+exp(coef(model_covid2)["time"]*12)
+
+# We again check the model and autocorrelation functions
+res5 <- residuals(model_covid2,type="deviance")
+plot(res5,ylim=c(-5,10),pch=19,cex=0.7,col=grey(0.6),main="Residuals over time",
+  ylab="Deviance residuals",xlab="Date")
+abline(h=0,lty=2,lwd=2)
+acf(res5)
+pacf(res5)
+```
+
+```{r}
+print("Modelo Poisson análisis principal+ harmonización + covid")
+tab_model(model_covid)
+
+print("Modelo binomial negativa análisis sensibilidad + harmonización + covid")
+tab_model(model_covid2)
+
+```
+Gráfica Modelo Poisson análisis principal + covid
+```{r}
+#AÑADIMOS COVID como variable
+datanew_its <- data.frame(pob=mean(tabla_its$pob),pob2=mean(tabla_its$pob2),
+                          periodo=rep(c(0,1),c(600,720)),
+                          time=1:1320/10, rep(1:12, length.out = 1320),
+                          covid = rep (c(0,1), c(1110,210)))
+counterfactual <- data.frame(pob=mean(tabla_its$pob),pob2=mean(tabla_its$pob2),
+                             periodo=0,
+                          time=1:1320/10, rep(1:12, length.out = 1320),
+                          covid = rep (c(0,1), c(1110,210)))
+
+pred4 <- predict(model_covid,type="response",transform(datanew_its))/mean(datanew_its$pob)*100
+
+# generate predictions under the counterfactual scenario
+pred4b <- predict(model_covid,type="response",transform(counterfactual))/mean(datanew_its$pob)*100
+
+
+its_ajustado_cont <- funcion_plot(df = tabla_its,ratio = tabla_its$rate, pred = pred4, pred_cf=pred4b, titulo = "Análisis principal, denominador interno", ylab = "Ratio x 100")
+
+its_ajustado_cont
+
+```
+
+Gráfica Modelo BN análisis sensibilidad+ harmonización (línea continua) + covid
+```{r}
+
+#predicción con intervención
+pred4 <- predict(model_covid2,type="response",transform(datanew_its,month=3))/mean(tabla_its$pob2)*10^5
+
+# generate predictions under the counterfactual scenario
+pred4b <- predict(model_covid2,type="response",transform(counterfactual,month=3))/mean(tabla_its$pob2)*10^5
+
+
+#plot para ratio2
+its_HyC_cont2 <- funcion_plot(df = tabla_its,ratio = tabla_its$rate2, pred = pred4, pred_cf=pred4b, titulo = "Análisis sensibilidad, denominador poblacional", ylab = "Ratio x 10.000")
+
+its_HyC_cont2
+
+```
+```{r}
+# unir gráficos con patchwork
+its_covid <- 
+  (its_ajustado_cont + labs(tag = "a)") ) /
+  (its_HyC_cont2 + labs(tag = "b)") )
+
+
+ggsave("ITS con COVID.png",
+       plot = its_covid,
+       width = 14,
+       height = 10,
+       dpi = 300)
+```
+
