@@ -622,6 +622,7 @@ its_HyC_cont2 <- funcion_plot(df = tabla_its,ratio = tabla_its$rate2, pred = pre
 its_HyC_cont2
 
 ```
+
 ```{r}
 # unir gráficos con patchwork
 its_covid <- 
@@ -636,3 +637,89 @@ ggsave("ITS con COVID.png",
        dpi = 300)
 ```
 
+#d) add a change-in-slope
+Modelo con interacción, ratio 1.
+Calculamos los coeficientes con exponencial y el CI. 
+```{r}
+############# MODELO INT 1 #####################
+model_int <- glm(cases ~ offset(log(pob)) + time + periodo + covid + periodo*time, family = poisson, data = tabla_its)
+summary(model_int)
+round(ci.lin(model_int,Exp=T),3)
+
+tab_model(model_int)
+```
+P value de 0.8679 --> no hay cambio significativo de pendiente, añadir la interaccion no mejora el modelo.
+
+Modelo con interacción, ratio 2.
+Calculamos los coeficientes con exponencial y el CI. 
+```{r}
+############# MODELO INT 2 #####################
+model_int2 <- glm.nb(cases ~ offset(log(pob2)) + time + periodo + harmonic(month,2,12) + covid + periodo*time, data = tabla_its)
+summary(model_int2)
+
+round(ci.lin(model_int2,Exp=T),3) #sacamos el exponencial de los coeficientes y los CI
+```
+Con el segundo ratio el valor de p value es aún peor. 
+
+```{r}
+tab_model(model_int2)
+```
+
+## e) vuelta a poisson ratio 2
+Prueba poisson tras armonizar y covid (el valor de error estándar es muy alto y Warning while fitting theta: iteration limit reached)
+
+```{r}
+model_int2 <- glm(cases ~ offset(log(pob2)) + time + periodo + harmonic(month,2,12) + covid + periodo*time, family = poisson, data = tabla_its)
+summary(model_int2)
+
+dispersiontest(model_int2)
+```
+
+# 5. ITS tras ajustes. 
+###################################################################
+# 5.1 Modelo1 con interacción - gráfica
+
+```{r}
+# Realizamos las predicciones con el nuevo modelo
+
+pred3 <- predict(model_int,type="response",datanew_its)/mean(datanew_its$pob)*100
+
+# generate predictions under the counterfactual scenario and add it to the plot
+pred3b <- predict(model_int,counterfactual,type="response")/mean(tabla_its$pob)*100
+
+
+its_ajustado <- funcion_plot(df = tabla_its,ratio = tabla_its$rate, pred = pred3, pred_cf=pred3b, titulo = "Análisis principal, denominador interno", ylab = "Ratio x 100")
+
+its_ajustado
+```
+
+#5.2 ITS ajustado ratio 2 (línea continua)
+```{r}
+
+#predicción con intervención
+pred4 <- predict(model_int2,type="response",transform(datanew_its,month=3))/mean(tabla_its$pob2)*10^5
+
+# generate predictions under the counterfactual scenario
+pred4b <- predict(model_int2,type="response",transform(counterfactual,month=3))/mean(tabla_its$pob2)*10^5
+
+#plot para ratio2
+its_ajustado_cont2 <- funcion_plot(df = tabla_its,ratio = tabla_its$rate2, pred = pred4, pred_cf=pred4b, titulo = "Análisis sensibilidad, denominador poblacional", ylab = "Ratio x 10.000")
+
+its_ajustado_cont2
+
+
+```
+
+```{r}
+# unir gráficos con patchwork
+its_ajustado_comb <- 
+  (its_ajustado + labs(tag = "a)") ) /
+  (its_ajustado_cont2 + labs(tag = "b)") )
+
+
+ggsave("ITS ajustado.png",
+       plot = its_ajustado_comb,
+       width = 14,
+       height = 10,
+       dpi = 300)
+```
