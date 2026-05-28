@@ -16,14 +16,10 @@ knitr::opts_chunk$set(
 ```{r, include=FALSE}
 library(openxlsx)
 library(stringr)
-library(stringi)
 library(readxl)
 library(janitor)
-library(readxl)
 library(ggplot2)
-library(ggsci)
 library(ggbreak)
-library(tibble)
 library(lubridate)
 library(scales)
 library(tidyr)
@@ -32,7 +28,6 @@ library(compareGroups)
 library(patchwork)
 library(sjPlot)
 library(dplyr) 
-library(foreign)
 library(tsModel)
 library("lmtest")
 library("Epi")
@@ -126,3 +121,176 @@ tabla_its <- tabla_its %>%
 #creamos fecha para las gráficas
 tabla_its$fecha <- as.Date(paste(tabla_its$year, tabla_its$month, "01", sep="-"))
 ```
+
+###2.1.2 añadimos otro denominador más fiable
+https://pestadistico.inteligenciadegestion.sanidad.gob.es/publicoSNS/C/base-de-datos-de-clinicos-de-atencion-primaria-bdcap/problemas-de-salud
+
+
+```{r}
+#creamos dataframe con los datos anuales
+#dividimos entre 12 para calculo mensual (media)
+pob2_df <- data.frame(
+  year = 2011:2021,
+  pob_anual = c(115349,131115,136373,138230,135424,135515,121938,126276,181537,176965,176423)) %>%
+  dplyr::mutate(pob2 = pob_anual / 12) %>%
+  dplyr::mutate(pob3 = pob_anual / 3)
+
+#lo unimos en base al año
+tabla_its <- tabla_its %>%
+    left_join(pob2_df%>% dplyr::select(year, pob2), by = "year")
+
+#calculamos el nuevo rate
+tabla_its <- tabla_its %>%
+  dplyr::mutate(rate2 = cases*10^5/ pob2)
+```
+
+## 2.2 Gráfica incidencia infección por años
+```{r}
+# Solo muestra enero de cada año para no saturar el eje
+breaks_eje <- tabla_its$time[tabla_its$month == 1]
+labels_eje  <- tabla_its$fecha[tabla_its$month == 1]
+
+factor <- max(tabla_its$rate) / max(tabla_its$cases)
+
+casos_mes_plot <-tabla_its %>% ggplot() + 
+  #ponemos el rectángulo al ppio para que quede al fondo
+  annotate("rect", xmin = 61, xmax = 133, ymin = -Inf, ymax = Inf, fill = "grey70")+
+  scale_x_continuous(breaks = breaks_eje, labels = labels_eje) + #ejes X
+  geom_bar(mapping = aes(x = time, y = cases*1/0.25),#amplificamos los casos para que quede bien la grafica
+           fill="#80A8A8", stat = "identity") + 
+  geom_point(mapping = aes(x = time, y = rate),fill="#80A8A8", size = 2, shape = 21) + 
+  geom_line(mapping = aes(x = time, y = rate,group=1)) + 
+    scale_y_continuous( #eje Y
+    name = "Ratio INR (x100)", 
+    limits = c(0,150),
+    sec.axis = sec_axis(~ .* 0.25/1, #eje por 1/factor de los casos
+                        name = "Número INR")) + 
+  theme_bw() + 
+  theme(
+    panel.grid.minor = element_blank(), legend.title = element_blank(), legend.position = "none", 
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )+xlab(" ") 
+
+
+casos_mes_plot
+
+#ggsave("casos_mes_plot.png", plot = casos_mes_plot, width = 12, height = 4, dpi = 300)
+
+
+#grafica para ratio 2
+casos_mes_plot2 <-tabla_its %>% ggplot() + 
+  #ponemos el rectángulo al ppio para que quede al fondo
+  annotate("rect", xmin = 61, xmax = 133, ymin = -Inf, ymax = Inf, fill = "grey70")+
+  scale_x_continuous(breaks = breaks_eje, labels = labels_eje) +
+  geom_bar(mapping = aes(x = time, y = cases*1/0.25),fill="deepskyblue4", stat = "identity") + 
+  geom_point(mapping = aes(x = time, y = rate2),fill="deepskyblue4", size = 2, shape = 21) + 
+  geom_line(mapping = aes(x = time, y = rate2,group=1)) + 
+    scale_y_continuous(
+      limits = c(0,150),#lo ponemos igual que la otra 
+    name = "Ratio INR (x 100.000 personas)", 
+    sec.axis = sec_axis(~ .* 0.25/1, #eje por 1/factor de los casos
+                        , name = "Número INR")) + 
+  theme_bw() + 
+  theme(
+    panel.grid.minor = element_blank(), legend.title = element_blank(), legend.position = "none", 
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )+xlab(" ") 
+
+
+casos_mes_plot2
+```
+
+```{r}
+# unir gráficos con patchwork
+plot_combinado <- 
+  (casos_mes_plot + labs(tag = "a) Denominador interno") ) /
+  (casos_mes_plot2 + labs(tag = "b) Denominador poblacional") )
+
+
+ggsave("RatioINR combinados.png",
+       plot = plot_combinado,
+       width = 14,
+       height = 10,
+       dpi = 300)
+```
+
+### 2.2.1 Tabla principal incidencia por meses
+```{r}
+# Función para crear la tabla pivotada
+crear_tabla <- function(datos, año_inicio, año_fin) {
+
+  datos %>%
+    filter(year >= año_inicio & year <= año_fin) %>%
+    mutate(
+      Fecha = paste0(year, "-", month.abb[month])
+    ) %>%
+    dplyr::select(
+      Fecha,
+      cases,
+      pob,
+      rate,
+      pob2,
+      rate2
+    ) %>%
+    dplyr::rename(
+      Casos = cases,
+      `Población EPOC hospital` = pob,
+      `Tasa (%)` = rate,
+      `Población EPOC Cataluña AP` = pob2,
+      `Tasa 2 (%)` = rate2
+    )
+
+}
+
+# Crear las dos tablas
+tabla1  <- crear_tabla(tabla_its, 2011, 2021)
+
+
+# Exportar a Excel
+write_xlsx(tabla1, path = "tabla_its.xlsx")
+```
+
+
+# 3. Estadísticos: análisis ITS
+
+## 3.1 Modelo inicial
+Poisson lo primero
+```{r}
+modelo_poisson <- glm(cases ~ offset(log(pob))+ time + periodo ,
+              family = poisson,
+              data = tabla_its)
+
+summary(modelo_poisson)
+
+```
+
+```{r}
+#con nuevo ratio
+mp2 <- glm(cases ~ offset(log(pob2))+ time + periodo ,
+              family = poisson,
+              data = tabla_its)
+
+summary(mp2)
+
+```
+
+## 3.2 Overdispersion: Binomial negativo
+Si p value es pequeño--> hay sobredispersión
+```{r}
+# Prueba de sobredispersión
+dispersiontest(modelo_poisson)
+
+#Cálculo de la dispersión con otro método
+sum(residuals(modelo_poisson, type = "pearson")^2) / df.residual(modelo_poisson)
+```
+
+```{r}
+#Lo mismo para el ratio nº 2
+# Prueba de sobredispersión
+dispersiontest(mp2)
+
+#Cálculo de la dispersión con otro método
+sum(residuals(mp2, type = "pearson")^2) / df.residual(mp2)
+```
+Con el denominador mensual, no hay sobrepispersión en el análisis principal (denominador HUB) pero si que la hay con el denominador poblacional (análisis de sensibilidad). Mantenemos poisson con analisis princiapl y binomial negativa con el denominador poblacional. 
+
